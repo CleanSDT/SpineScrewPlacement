@@ -28,50 +28,33 @@ class SpineEnv(gym.Env):
         self.pedicle_points = spineData['pedicle_points']
         self.centerPointL = self.pedicle_points[0]
         self.centerPointR = self.pedicle_points[1]
-        self.action_num = 2 #δhorizon水平方向旋转角,δverticle ∆𝑠𝑎𝑔𝑖𝑡𝑡𝑎𝑙垂直方向旋转角
-        # [10,10]
-        self.rotate_mag = self.step_opt['rotate_mag'] # 直线旋转度数的量级 magtitude of rotation (δlatitude,δlongitude) of line (latitude纬度，longitude经度)
-        self.reward_weight = [0.1, 0.1] # 计算每步reward的权重 weights for every kind of reward (), [line_delta, radius_delta] respectively
-        # [-30., 30., -60., 60.]
-        self.degree_threshold = degree_threshold # 用于衡量终止情况的直线经纬度阈值 [minimum latitude, maximum latitude, minimum longitude, maximum longitude]
+        self.action_num = 2
+        self.rotate_mag = self.step_opt['rotate_mag'] 
+        self.reward_weight = [0.1, 0.1] 
+        self.degree_threshold = degree_threshold
 
-        self.min_action = -1.0 # threshold for sum of policy_net output and random exploration
+        self.min_action = -1.0 
         self.max_action = 1.0
         self.action_space = spaces.Box(
-            low=self.min_action, high=self.max_action, shape=(self.action_num,)) #用来检查动作的取值范围
-        # self.trans_mag = np.array(self.step_opt.trans_mag) # 定点的移动尺度范围
-        self.rotate_mag = np.array(self.rotate_mag) # 旋转的尺度范围, 两个方向 [10,10]
+            low=self.min_action, high=self.max_action, shape=(self.action_num,))
+        # self.trans_mag = np.array(self.step_opt.trans_mag)
+        self.rotate_mag = np.array(self.rotate_mag) 
         self.weight = np.array(self.reward_weight)
-        self.degree_threshold = np.array(self.degree_threshold) # [-30., 30., -60., 60.]
+        self.degree_threshold = np.array(self.degree_threshold)
         self.radiu_thres = None #[self.step_opt.radiu_thres[0] + spineData.cpoint_l[0], self.step_opt.radiu_thres[1] +spineData.cpoint_l[0]]
         self.line_thres =  None #self.step_opt.line_thres
-        self.done_radius = 0.5 #医学中允许的置钉最小半径（用于衡量是否为终止状态） allows minimum radius
-
-        # 计算椎体边缘各点到定点的距离
+        self.done_radius = 
         dist = utils3.spine2point(self.mask_coards, self.mask_array, self.centerPointR)
-        # 定义一个球形区域，球心是定点，半径是最小距离减去1。
         self.cp_threshold = (self.centerPointR, np.min(dist)-1) # The position of the allowed points, represented as (center of sphere, radius)
         self.seed()
-        
         self.state_matrix = None
-        self.steps_before_done = None # 表示到停止的时候一共尝试了多少step
+        self.steps_before_done = None
 
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
         return [seed]
 
-    def computeInitDegree(self, random_reset = False): # TODO: it still needs to refine after we can get more point
-        # 初始化倾斜角度，添加噪声
-        # if self.reset_opt.initdegree:
-        #     deg = self.reset_opt.initdegree
-        # else:
-        #     deg = [0.,0.]
-        # if self.reset_opt.is_rand_d:
-        #     return np.array(deg) + self.np_random.uniform(
-        #         low = self.reset_opt.rdrange[0], high = self.reset_opt.rdrange[1], size = [2,])
-        # else:
-        #     return np.array(deg)
-        # return np.array([0.,0.])
+    def computeInitDegree(self, random_reset = False): 
         if random_reset:
             horizon_left = self.np_random.uniform(low = self.degree_threshold[0], high = self.degree_threshold[1], size = [1,])[0]
             sagtal_left = self.np_random.uniform(low = self.degree_threshold[2], high = self.degree_threshold[3], size = [1,])[0]
@@ -80,17 +63,7 @@ class SpineEnv(gym.Env):
             return np.array([horizon_left,sagtal_left]), np.array([horizon_right,sagtal_right])
         else: return np.array([0.,0.]), np.array([0.,0.])
 
-    def computeInitCPoint(self): # TODO: it still needs to refine after we can get more point
-        # 初始化定点位置，添加噪声
-        # if self.reset_opt.initpoint:
-        #     cpoint = self.reset_opt.initpoint
-        # else:
-        #     cpoint = self.centerPointL
-        # if self.reset_opt.is_rand_p:
-        #     return cpoint + self.np_random.uniform(
-        #         low = self.reset_opt.rprange[0], high = self.reset_opt.rprange[1], size = [3,])
-        # else:
-        #     return np.array(cpoint)
+    def computeInitCPoint(self): 
         return self.centerPointL, self.centerPointR
 
     def normalize(self, array):
@@ -99,20 +72,14 @@ class SpineEnv(gym.Env):
         return (array-mu) / std
     
     def reset(self, random_reset=False):
-        self.steps_before_done = None # 设置当前步数为None
-        # 初始化旋转角度（横断面旋转角horizon，矢状面旋转角sagtal）
+        self.steps_before_done = None 
         init_degree_L, init_degree_R = self.computeInitDegree(random_reset)
-        # 初始化定点（椎弓根质心）
         init_cpoint_L, init_cpoint_R = self.computeInitCPoint()
-        # 初始化螺钉方向向量（旋转初始方向向量(0, 1, 0)）
         dire_vector_L, dire_vector_R = utils3.coorLngLat2Space(init_degree_L, init_degree_R, default=True)
-        # 计算椎体边缘各点到定点的距离
         self.dist_mat_point_L = utils3.spine2point(self.mask_coards, self.mask_array, init_cpoint_L)
         self.dist_mat_point_R = utils3.spine2point(self.mask_coards, self.mask_array, init_cpoint_R)
-        # 计算椎体边缘各点到螺钉方向向量的距离
         self.dist_mat_line_L = utils3.spine2line(self.mask_coards, self.mask_array, init_cpoint_L, dire_vector_L)
         self.dist_mat_line_R = utils3.spine2line(self.mask_coards, self.mask_array, init_cpoint_R, dire_vector_R)
-        # 获取螺钉长度螺钉半径
         self.pre_max_radius_L, self.pre_line_len_L, self.endpoints_L = utils3.getLenRadiu \
             (self.mask_coards, self.mask_array, init_cpoint_L, dire_vector_L, R=1, line_thres=self.line_thres,
              radiu_thres=self.radiu_thres, point_dist=self.dist_mat_point_L, line_dist=self.dist_mat_line_L)
@@ -125,30 +92,23 @@ class SpineEnv(gym.Env):
         state_list.extend(init_degree_L)
         state_list.extend(init_degree_R)
         self.state_matrix = np.asarray(state_list, dtype = np.float32)
-        # self.state_matrix中存储的是degree，而送入网络时的是弧度
         state_ = self.state_matrix * 1.0
         return np.asarray(state_, dtype=np.float32), self.normalize(state_3D)
 
     def stepPhysics(self, state_matrix, delta_degree_L, delta_degree_R, delta_cpoint = None):
-        # todo 如果选择弧度值，这里需要改变
         radius_L, radius_R, length_L, length_R, degree_L, degree_R = state_matrix[0], state_matrix[1], state_matrix[2], state_matrix[3], state_matrix[4:6], state_matrix[6:8]
         result = {'d_L': degree_L + delta_degree_L,
                   'd_R': degree_R + delta_degree_R,
-                #   'p': [degree, cpoint + delta_cpoint],
-                #   'dp': [degree + delta_degree, cpoint + delta_cpoint]
                   }
         return result['d_L'], result['d_R']
 
     def getReward(self, state):
-        #state [radius,length,degree]
         line_len_L = state[2]
         line_len_R = state[3]
-        # 没入长度越长越好,reward基于上一次的状态来计算。
         len_delta_L = line_len_L - self.pre_line_len_L
         self.pre_line_len_L = line_len_L
         len_delta_R = line_len_R - self.pre_line_len_R
         self.pre_line_len_R = line_len_R
-        # 半径越大越好
         radius_delta_L = state[0] - self.pre_max_radius_L
         self.pre_max_radius_L = state[0]
         radius_delta_R = state[1] - self.pre_max_radius_R
@@ -156,28 +116,23 @@ class SpineEnv(gym.Env):
         return len_delta_L, len_delta_R, radius_delta_L, radius_delta_R
 
     def step(self, action_L, action_R):
-        if self.discrete_action:# 离散
-            discrete_vec = np.array([-0.25,-0.2,-0.15,-0.1,-0.05,.0,0.05,0.1,0.15,0.2,0.25])
+        if self.discrete_action:
+            discrete_vec = np.array()
             discrete_vec = np.rad2deg(discrete_vec)
-            rotate_deg_L = np.array([discrete_vec[action_L[0]], discrete_vec[action_L[1]]]) # 水平 垂直
+            rotate_deg_L = np.array([discrete_vec[action_L[0]], discrete_vec[action_L[1]]]) 
             rotate_deg_R = np.array([discrete_vec[action_R[0]], discrete_vec[action_R[1]]])
-        else:# 连续
+        else:
             # action_L = np.clip(action_L, -1.0, 1.0)
             # action_R = np.clip(action_R, -1.0, 1.0)
             rotate_deg_L = self.rotate_mag * action_L[0:2]
             rotate_deg_R = self.rotate_mag * action_R[0:2]
 
-        #状态矩阵内容：radius_L, radius_R, length_L, length_R, degree_L, degree_R = state_matrix[0], state_matrix[1], state_matrix[2], state_matrix[3], state_matrix[4:6], state_matrix[6:8]
-        # 更新状态
         this_degree_L, this_degree_R = self.stepPhysics(self.state_matrix, rotate_deg_L,rotate_deg_R, delta_cpoint = None)
-        # 返回旋转后的方向向量
         this_dirpoint_L, this_dirpoint_R = utils3.coorLngLat2Space(this_degree_L, this_degree_R, R=1., default = True)
-        # 计算脊柱数据上各点与定点（参数3）的距离，返回距离矩阵
         self.dist_mat_point_L = utils3.spine2point(self.mask_coards, self.mask_array, self.centerPointL)
         self.dist_mat_point_R = utils3.spine2point(self.mask_coards, self.mask_array, self.centerPointR)
         self.dist_mat_line_L = utils3.spine2line(self.mask_coards, self.mask_array, self.centerPointL, this_dirpoint_L)
         self.dist_mat_line_R = utils3.spine2line(self.mask_coards, self.mask_array, self.centerPointR, this_dirpoint_R)
-        # 获取螺钉长度螺钉半径
         max_radius_L, line_len_L, self.endpoints_L = utils3.getLenRadiu \
             (self.mask_coards, self.mask_array, self.centerPointL, this_dirpoint_L, R=1, line_thres=self.line_thres,
              radiu_thres=self.radiu_thres, point_dist=self.dist_mat_point_L, line_dist=self.dist_mat_line_L)
@@ -193,17 +148,14 @@ class SpineEnv(gym.Env):
         self.state3D_array = deepcopy(state_3D)
 
         self.state_matrix = np.asarray(state_list, dtype=np.float32)
-        # self.state_matrix中存储的是degree，而送入网络时的是弧度
-        if max_radius_L < 0.: # todo 仍需要再思考
+        if max_radius_L < 0.:
             line_len_L = 0.01
             self.state_matrix[2] = 0.01
-        if max_radius_R < 0.: # todo 仍需要再思考
+        if max_radius_R < 0.: 
             line_len_R = 0.01
             self.state_matrix[3] = 0.01
 
-        # Judge whether done
-        # degree_threshold [-30., 30., -60., 60.]
-        # 水平旋转 垂直旋转 角度
+        
         done_L = self.state_matrix[0] < self.done_radius \
             or not (self.degree_threshold[0]<= self.state_matrix[4] <= self.degree_threshold[1]) \
             or not (self.degree_threshold[2]<= self.state_matrix[5] <= self.degree_threshold[3]) \
@@ -215,15 +167,10 @@ class SpineEnv(gym.Env):
         done_L, done_R = bool(done_L), bool(done_R)
         done = done_L or done_R
         pre_volume = (3.14*(self.pre_line_len_L*self.pre_max_radius_L*self.pre_max_radius_L)+3.14*(self.pre_line_len_R*self.pre_max_radius_R*self.pre_max_radius_R))/2
-        # 计算变化量
         len_delta_L, len_delta_R, radius_delta_L, radius_delta_R = self.getReward(self.state_matrix)
-        # reward为当前螺钉长度减去一个base值
-        # reward = (self.state_matrix[2] + self.state_matrix[3])/ (70*2) 
         now_volume = (3.14*(self.state_matrix[2]*self.state_matrix[0]*self.state_matrix[0])+3.14*(self.state_matrix[3]*self.state_matrix[1]*self.state_matrix[1]))/2
-        # reward = np.log(now_volume) - np.log(pre_volume) #reward为体积差
-        delta_volume = (now_volume - pre_volume)/10000
-
-        reward = now_volume/10000.0
+        delta_volume = (now_volume - pre_volume)
+        reward = 
         state_ = self.state_matrix * 1.0
         return np.asarray(state_, dtype=np.float32), reward, done, \
             {'len_delta_L': len_delta_L, 'len_delta_R': len_delta_R, \
@@ -234,7 +181,7 @@ class SpineEnv(gym.Env):
         # fig = plt.figure()
         if is_vis:
             plt.ion()
-        visual_ = self.mask_array #+ np.where(self.dist_mat <= 1.2, 2, 0)
+        visual_ = self.mask_array #+ np.where(self.dist_mat <= )
         x_visual = np.max(visual_[:, :, :], 0)
         z_visual = np.max(visual_[:, :, :], 2)
 
@@ -315,18 +262,17 @@ class SpineEnv(gym.Env):
         state_list.extend(this_degree_L)
         state_list.extend(this_degree_R)
         state_matrix = np.asarray(state_list, dtype=np.float32)
-        # self.state_matrix中存储的是degree，而送入网络时的是弧度
-        if max_radius_L < 0.: # todo 仍需要再思考
+        if max_radius_L < 0.: 
             line_len_L = 0.01
             state_matrix[2] = 0.01
-        if max_radius_R < 0.: # todo 仍需要再思考
+        if max_radius_R < 0.: 
             line_len_R = 0.01
             state_matrix[3] = 0.01
         pre_max_radius_L, pre_max_radius_R, pre_line_len_L, pre_line_len_R, = base_state[0],base_state[1],base_state[2],base_state[3]
         pre_volume = (3.14*(pre_line_len_L*pre_max_radius_L*pre_max_radius_L)+3.14*(pre_line_len_R*pre_max_radius_R*pre_max_radius_R))/2  
         now_volume = (3.14*(state_matrix[2]*state_matrix[0]*state_matrix[0])+3.14*(state_matrix[3]*state_matrix[1]*state_matrix[1]))/2
-        # reward = np.log(now_volume) - np.log(pre_volume) #reward为体积差
-        reward = now_volume/10000.0 #reward为体积差
+        # reward = np.log(now_volume) - np.log(pre_volume) 
+        reward = now_volume/10000.0 
         return reward
 
     def simulate_volume(self, radian_L, radian_R, draw_screw = False):
@@ -347,11 +293,10 @@ class SpineEnv(gym.Env):
         state_list.extend(this_degree_L)
         state_list.extend(this_degree_R)
         state_matrix = np.asarray(state_list, dtype=np.float32)
-        # self.state_matrix中存储的是degree，而送入网络时的是弧度
-        if max_radius_L < 0.: # todo 仍需要再思考
+        if max_radius_L < 0.: 
             line_len_L = 0.01
             state_matrix[2] = 0.01
-        if max_radius_R < 0.: # todo 仍需要再思考
+        if max_radius_R < 0.: 
             line_len_R = 0.01
             state_matrix[3] = 0.01
         now_volume = (3.14*(state_matrix[2]*state_matrix[0]*state_matrix[0])+3.14*(state_matrix[3]*state_matrix[1]*state_matrix[1]))/2
