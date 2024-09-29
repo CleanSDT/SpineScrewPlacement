@@ -30,20 +30,6 @@ def count_vars(module):
 
 
 def discount_cumsum(x, discount):
-    """
-    magic from rllab for computing discounted cumulative sums of vectors.
-
-    input: 
-        vector x, 
-        [x0, 
-         x1, 
-         x2]
-
-    output:
-        [x0 + discount * x1 + discount^2 * x2,  
-         x1 + discount * x2,
-         x2]
-    """
     return scipy.signal.lfilter([1], [1, float(-discount)], x[::-1], axis=0)[::-1]
 
 
@@ -58,10 +44,7 @@ class Actor(nn.Module):
     def _evaluate(self, obs):
         raise NotImplementedError
     
-    def forward(self, obs, a_Left=None, a_Right=None):
-        # Produce action distributions for given observations, and 
-        # optionally compute the log likelihood of given actions under
-        # those distributions.      
+    def forward(self, obs, a_Left=None, a_Right=None): 
         pi_Left, pi_Right = self._distribution(obs)
         logp_a_Left = None
         logp_a_Right = None
@@ -71,7 +54,6 @@ class Actor(nn.Module):
         return pi_Left, logp_a_Left, pi_Right, logp_a_Right
 
 class MLPCategoricalActor(Actor):
-    
     def __init__(self, obs_dim, act_dim, hidden_sizes, activation, discrete_dim=11):
         super().__init__()
         self.discrete_dim = discrete_dim
@@ -88,13 +70,11 @@ class MLPCategoricalActor(Actor):
             layer_init(nn.Linear(64 * 16 * 6 * 4, 512)),
             nn.ReLU(True),
             layer_init(nn.Linear(512, act_dim*discrete_dim), std=0.01),
-            # nn.Tanh(),
         )
         self.linearNetRight = nn.Sequential(
             layer_init(nn.Linear(64 * 16 * 6 * 4, 512)),
             nn.ReLU(True),
             layer_init(nn.Linear(512, act_dim*discrete_dim), std=0.01),
-            # nn.Tanh(),
         )
 
     def _distribution(self, obs):
@@ -248,8 +228,6 @@ class LTOMLPCritic(nn.Module):
 class MyMLPActorCritic(nn.Module):
     def __init__(self, observation_shape, action_shape, hidden_sizes=(64,64), activation=nn.Tanh, discrete=True, LTO = True):
         super().__init__()
-        # policy builder depends on action space
-        # if isinstance(action_space, Box):
         if discrete:
             if LTO:
                 self.pi = LTOMLPCategoricalActor(observation_shape, action_shape, hidden_sizes, activation)
